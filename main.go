@@ -13,9 +13,9 @@ import (
 )
 
 //go:embed site.html
-var indexHtml []byte
+var siteHtml []byte
 
-func serveBytes(data []byte) http.Handler {
+func httpBytesHandler(data []byte) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		_, err := res.Write(data)
 		if err != nil {
@@ -25,8 +25,8 @@ func serveBytes(data []byte) http.Handler {
 }
 
 type saveFile struct {
-	CurrentMarkerId int
-	Markers         []marker
+	CurrentMarkerId int      `json:"CurrentMarkerId"`
+	Markers         []marker `json:"markers"`
 }
 
 type position struct {
@@ -99,8 +99,11 @@ type server struct {
 
 func newServer() *server {
 	return &server{
-		sessions: map[int]*session{},
-		markers:  map[int]marker{},
+		mutex:            sync.Mutex{},
+		currentSessionId: 0,
+		sessions:         map[int]*session{},
+		currentMarkerId:  0,
+		markers:          map[int]marker{},
 	}
 }
 
@@ -444,7 +447,7 @@ func (s *server) startServer() error {
 	http.HandleFunc("/update_position", s.handleUpdatePositionRequest)
 	http.HandleFunc("/add_marker", s.handleAddMarkerRequest)
 	http.HandleFunc("/remove_marker", s.handleRemoveMarkerRequest)
-	http.Handle("/", serveBytes(indexHtml))
+	http.Handle("/", httpBytesHandler(siteHtml))
 
 	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
