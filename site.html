@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Dem Tode Zuvor</title>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css"
+          integrity="sha512-hoalWLoI8r4UszCkZ5kL8vayOGVae1oxXe/2A4AO6J9+580uKHDO3JdHb7NzwwzK5xr/Fs0W40kiNHxM9vyTtQ=="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.8.0/dist/leaflet.js"
+            integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
+            crossorigin=""></script>
+
+    <style>
+        #map {
+            height: 500px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script>
+    fetch("./login", {
+        method: "post",
+        body: JSON.stringify({
+            userName: prompt("Frau Strupat möchte deinen Namen wissen")
+        })
+    }).then(res => res.json())
+        .then(loginResponse => {
+            let sessionId = loginResponse.sessionId
+
+            let map = L.map('map').setView([51.505, -0.09], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© Eigentum der WeberGMBH'
+            }).addTo(map);
+
+            let markers = new Map();
+            let userPositions = [];
+
+            function addMarker(markerData) {
+                let marker = L.marker([markerData.position.latitude, markerData.position.longitude]);
+                marker.bindPopup("Erstellt von: " + markerData.author)
+
+                marker.on("dblclick", () => {
+                    fetch("./remove_marker", {
+                        method: "post",
+                        body: JSON.stringify({
+                            sessionId: sessionId,
+                            markerId: markerData.id
+                        })
+                    }).then(() => alert("Erfolgreich entfernt"))
+                })
+
+                marker.addTo(map);
+                markers.set(markerData.id, marker)
+            }
+
+            for (let marker of loginResponse.markers) {
+                addMarker(marker)
+            }
+
+            map.on("click", (event) => {
+                fetch("./add_marker", {
+                    method: "post",
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        position: {
+                            latitude: event.latlng.lat,
+                            longitude: event.latlng.lng
+                        }
+                    })
+                })
+            })
+
+            navigator.geolocation.watchPosition(position => {
+                fetch("./update_position", {
+                    method: "post",
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        position: {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        }
+                    })
+                })
+            }, () => alert("Irgendwas ist schief gelaufen"), {
+                enableHighAccuracy: true
+            })
+
+            setInterval(() => {
+                fetch("./update", {
+                    method: "post",
+                    body: JSON.stringify({
+                        sessionId: sessionId
+                    })
+                }).then(res => res.json())
+                    .then(updateResponse => {
+                        for (let newMarker of updateResponse.newMarkers) {
+                            addMarker(newMarker)
+                        }
+
+                        for (let removedMarkerId of updateResponse.removedMarkers) {
+                            markers.get(removedMarkerId).remove()
+                            markers.delete(removedMarkerId)
+                        }
+
+                        for (let oldUserPosition of userPositions) {
+                            oldUserPosition.remove();
+                        }
+                        userPositions = []
+
+                        for (let [userName, position] of Object.entries(updateResponse.userPositions)) {
+                            let marker = L.marker([position.latitude, position.longitude]).bindPopup("Live Position von: " + userName).openPopup().addTo(map)
+                            userPositions.push(marker)
+                        }
+                    })
+            }, 500)
+        })
+</script>
+</body>
+</html>
